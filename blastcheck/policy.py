@@ -8,7 +8,6 @@ If Checkov isn't installed, the report says so and moves on.
 import json
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from blastcheck.models import PolicyFinding, PolicyResult
@@ -20,18 +19,21 @@ class PolicyError(Exception):
 
 
 def find_checkov() -> str | None:
-    """Checkov on PATH, or next to the running Python (a venv that isn't activated)."""
-    on_path = shutil.which("checkov")
-    if on_path:
-        return on_path
-    beside_python = Path(sys.executable).parent / "checkov"
-    return str(beside_python) if beside_python.is_file() else None
+    """Checkov on PATH.
+
+    Install it in its own environment (pipx or brew), never in blastcheck's: Checkov
+    depends on bc-python-hcl2, which installs under the same `hcl2` import name and
+    replaces the python-hcl2 that blastcheck needs.
+    """
+    return shutil.which("checkov")
 
 
 def run_checkov(pre_dir: Path, post_dir: Path) -> PolicyResult:
     checkov = find_checkov()
     if checkov is None:
-        return PolicyResult("skipped", [], "Checkov is not installed (pip install checkov).")
+        return PolicyResult(
+            "skipped", [], "Checkov is not on PATH (install it with `pipx install checkov` or `brew install checkov`)."
+        )
     try:
         before = set(failed_checks(checkov, pre_dir))
         after = failed_checks(checkov, post_dir)

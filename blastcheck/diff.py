@@ -20,6 +20,14 @@ import hcl2
 
 from blastcheck.models import ChangedBlock
 
+if not hasattr(hcl2, "SerializationOptions"):
+    raise ImportError(
+        "blastcheck needs python-hcl2 >= 8, but the installed `hcl2` module is a different "
+        "package (usually bc-python-hcl2, pulled in by `pip install checkov`). Install "
+        "Checkov outside this environment (pipx or brew), then run: "
+        "pip install --force-reinstall python-hcl2"
+    )
+
 # Terraform's own working files never belong in a workspace copy.
 _IGNORED = shutil.ignore_patterns(".terraform", "*.tfstate", "*.tfstate.backup", "*.tfplan")
 

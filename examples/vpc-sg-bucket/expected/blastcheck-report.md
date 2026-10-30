@@ -77,7 +77,7 @@ Nothing dropped or added: every resource and attribute the LLM named exists in t
 
 ## Policy checks (Checkov)
 
-Skipped: Checkov is not installed (pip install checkov).
+Ran: 0 new finding(s) after the change (0 finding(s) were already present before it and are not about this change).
 
 ---
 

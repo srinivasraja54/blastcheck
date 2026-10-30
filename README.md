@@ -218,7 +218,12 @@ reason, the tests rejected before running (with their code), the risks the LLM r
 anything blastcheck dropped from the LLM's answer, and Checkov's results.
 
 Checkov runs on both copies, and only findings that are **new after the change** are
-reported. If Checkov isn't installed, the report says so.
+reported. If Checkov isn't on `PATH`, the report says so.
+
+Install Checkov in its own environment (`pipx install checkov` or `brew install checkov`),
+**not** in blastcheck's virtualenv. Checkov depends on `bc-python-hcl2`, which installs
+under the same `hcl2` import name and replaces the python-hcl2 that blastcheck needs.
+blastcheck stops with a clear error if that happens.
 
 ## Running it
 

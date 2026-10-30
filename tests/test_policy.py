@@ -36,15 +36,7 @@ def test_missing_checkov_is_skipped_with_a_note(monkeypatch, tmp_path):
     result = run_checkov(tmp_path, tmp_path)
 
     assert result.status == "skipped"
-    assert "not installed" in result.note
-
-
-def test_checkov_in_an_unactivated_venv_is_found(monkeypatch, tmp_path):
-    (tmp_path / "checkov").write_text("")
-    monkeypatch.setattr(policy.shutil, "which", lambda _: None)
-    monkeypatch.setattr(policy.sys, "executable", str(tmp_path / "python"))
-
-    assert policy.find_checkov() == str(tmp_path / "checkov")
+    assert "not on PATH" in result.note
 
 
 def test_only_findings_new_after_the_change_are_reported(monkeypatch, tmp_path):
