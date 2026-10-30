@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blastcheck"
+version = "0.1.0"
+description = "Change-scoped test generation for Terraform: intent + blast-radius tests for a PR diff."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "python-hcl2>=8.0",
+    "anthropic>=2.3",
+]
+
+[project.scripts]
+blastcheck = "blastcheck.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["blastcheck"]
+
+[tool.setuptools.package-data]
+blastcheck = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "terraform: runs the real terraform CLI (offline, dummy credentials); deselect with -m 'not terraform'",
+]

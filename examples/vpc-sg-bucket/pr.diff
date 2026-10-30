@@ -1,0 +1,26 @@
+--- a/main.tf
++++ b/main.tf
+@@ -53,13 +53,22 @@
+   cidr_ipv4         = aws_subnet.alb.cidr_block
+ }
+ 
++resource "aws_vpc_security_group_ingress_rule" "app_https" {
++  security_group_id = aws_security_group.app.id
++  description       = "HTTPS from the load balancer subnet"
++  ip_protocol       = "tcp"
++  from_port         = 443
++  to_port           = 443
++  cidr_ipv4         = aws_subnet.alb.cidr_block
++}
++
+ resource "aws_vpc_security_group_ingress_rule" "ssh_bastion" {
+   security_group_id = aws_security_group.app.id
+   description       = "SSH from the bastion subnet only"
+   ip_protocol       = "tcp"
+   from_port         = 22
+   to_port           = 22
+-  cidr_ipv4         = aws_subnet.bastion.cidr_block
++  cidr_ipv4         = aws_vpc.main.cidr_block
+ }
+ 
+ # --- Log bucket ----------------------------------------------------------------
