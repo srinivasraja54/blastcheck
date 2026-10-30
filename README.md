@@ -7,20 +7,75 @@ out what the change is *meant* to do, and generates `terraform test` tests for w
 change must do and what it must not break. The tests are then run deterministically
 with `terraform test`, so a sneaky regression gets caught before merge.
 
-> Status: work in progress. Steps 1–5 of 6 are done; the markdown report is next.
+It is not a policy scanner (it calls Checkov for that), it doesn't test your whole
+module, it never touches a real cloud account, and it doesn't merge anything.
 
-## How it works
+## 30-second demo
 
-| Step | What it does | Who does it |
+The demo PR says it adds an HTTPS rule. It also changes one line in the SSH rule:
+
+```diff
+-  cidr_ipv4         = aws_subnet.bastion.cidr_block
++  cidr_ipv4         = aws_vpc.main.cidr_block
+```
+
+That reads like a refactor. It actually opens SSH to the whole VPC (`10.0.0.0/16`)
+instead of the bastion subnet (`10.0.100.0/28`), and no policy scanner flags it because
+it's still private address space. The PR description calls it a "small tidy-up".
+
+```sh
+python3.12 -m venv .venv && .venv/bin/pip install -e .
+.venv/bin/blastcheck run --module examples/vpc-sg-bucket/module \
+                         --diff   examples/vpc-sg-bucket/pr.diff \
+                         --intent examples/vpc-sg-bucket/pr.md \
+                         --replay examples/vpc-sg-bucket/recordings \
+                         --out    out/
+```
+
+```
+5/6 validate: running every test before and after the change
+    regression n1_ssh_bastion_unchanged
+    kept       n2_ssh_bastion_unchanged
+    kept       n3_app_http_unchanged
+    discarded  n4_app_unchanged
+    kept       n5_bastion_unchanged
+    kept       app_https_source_is_alb_subnet
+6/6 report
+**Verdict: REGRESSION FOUND.** 1 test(s) pass before this change and fail after it.
+```
+
+`--replay` uses the recorded LLM answers that ship with the demo, so this needs no API
+key and gives the same result every time. It does need Terraform 1.7+; the first run
+downloads the AWS provider. The output is in
+[`examples/vpc-sg-bucket/expected/`](examples/vpc-sg-bucket/expected): the
+[report](examples/vpc-sg-bucket/expected/blastcheck-report.md) and the
+[generated tests](examples/vpc-sg-bucket/expected/tests/2d20d867.tftest.hcl).
+
+The report shows all four ways a test can end:
+
+- **regression**: the SSH guard passes before the change and fails after it;
+- **kept**: blast-radius guards on untouched resources, and a test for the new rule;
+- **discarded**: a guard that fails even on the unchanged module (a bad test);
+- **rejected before running**: an LLM-written tautology (`from_port == to_port`, both
+  set to `443` by the diff).
+
+## How it works: exact vs judgment
+
+| Part | Who does it | Why |
 |---|---|---|
-| 1. `diff` | Apply the PR to a copy of the module, find which blocks changed | plain code |
-| 2. `plan` | `terraform plan` + `show -json` on the before and after copies | plain code |
-| 3. `intent` | Read the diff and PR text, decide what must hold and what must not change | LLM |
-| 4. `author` | Write the `.tftest.hcl` file | LLM |
-| 5. `validate` | Run every test before and after the change; drop bad tests | plain code |
-| 6. `report` | Markdown summary and verdict | plain code |
+| Apply the diff, find changed blocks | plain code (`diff.py`) | must be exact |
+| Plan before and after, compare values | plain code (`plan.py`) | must be exact |
+| Decide what the change must do and must not break | **LLM** (`intent.py`) | needs judgment |
+| Check the LLM's answer against the plan | plain code (`intent.py`) | must be exact |
+| Write must_not_change guards, values from the plan | plain code (`author.py`) | must be exact |
+| Write must_hold tests | **LLM** (`author.py`) | needs judgment |
+| Reject tautologies and malformed tests | plain code (`tautology.py`) | must be exact |
+| Run tests before/after, decide each outcome | plain code (`validate.py`) | must be reproducible |
+| Policy checks | Checkov (`policy.py`) | already solved |
+| Report and verdict | plain code (`report.py`) | must be reproducible |
 
-The rule: if something can be done without the LLM, it is.
+The rule: if something can be done without the LLM, it is. There are exactly two LLM
+calls per run, and no LLM decides whether a test passes, fails, or counts.
 
 ### Step 1: diff
 
@@ -155,6 +210,16 @@ fails even on the unchanged module, so it's a bad test, and blastcheck discards 
 The surviving tests, regressions included and marked, are written to
 `tests/<change-id>.tftest.hcl`. blastcheck exits with code 1 when it finds a regression.
 
+### Step 6: report
+
+`blastcheck-report.md` leads with the verdict and the regressions. It then lists the
+changes the PR description doesn't explain, every test with its outcome and the
+reason, the tests rejected before running (with their code), the risks the LLM raised,
+anything blastcheck dropped from the LLM's answer, and Checkov's results.
+
+Checkov runs on both copies, and only findings that are **new after the change** are
+reported. If Checkov isn't installed, the report says so.
+
 ## Running it
 
 ```sh
@@ -181,12 +246,6 @@ it was made for: if the module, the diff or a prompt template changes, replay re
 it and you re-record. `--record` reuses recordings that still match, so re-recording
 only calls the API for the steps that changed.
 
-## Demo
-
-[`examples/vpc-sg-bucket`](examples/vpc-sg-bucket) is a small VPC + security group +
-bucket module with a PR that adds an HTTPS rule and quietly widens the SSH rule from
-the bastion subnet to the whole VPC.
-
 ## Development
 
 ```sh
@@ -198,8 +257,9 @@ python3.12 -m venv .venv
 Requires Python 3.12+, Terraform 1.7+ and `git`. Tests marked `terraform` run the real
 terraform CLI (offline); skip them with `pytest -m 'not terraform'`.
 
-## Limitations (so far)
+## Limitations
 
+- v1 is AWS-only, plan-only and offline. No real cloud runs, no CI integration yet.
 - One module at a time; only top-level `.tf` files.
 - Diff paths must be relative to the module directory (`a/main.tf`).
 - `moved`, `import`, `check` and `removed` blocks aren't diffed directly; their
@@ -211,3 +271,6 @@ terraform CLI (offline); skip them with `pytest -m 'not terraform'`.
 - One tautological assert rejects the whole test, including any good asserts in it.
 - Guards on provider-computed defaults can be discarded, because the mocked provider
   fills them in differently from the real one. Validation catches this; it isn't silent.
+- The LLM decides what is worth testing. If it misses something, no test covers it.
+  The report's "unexplained changes" and risks make its reasoning visible, but they
+  don't replace a reviewer.

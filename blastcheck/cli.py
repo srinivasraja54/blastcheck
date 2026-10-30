@@ -3,18 +3,17 @@
     blastcheck run --module <dir> --diff <file> [--intent <file>] [--out <dir>]
                    [--model <id>] [--record <dir> | --replay <dir>] [--work <dir>]
 
-Writes <out>/tests/<change-id>.tftest.hcl with the tests that survived validation.
+Writes, under <out>:
+  tests/<change-id>.tftest.hcl   the tests that survived validation
+  blastcheck-report.md           the verdict, every test's fate, and why
 Exit codes: 0 = no regression found, 1 = regression found, 2 = blastcheck error.
-(Step 6, the markdown report, is not built yet; for now results are printed as JSON.)
 """
 
 import argparse
 import hashlib
-import json
 import os
 import sys
 import tempfile
-from dataclasses import asdict
 from pathlib import Path
 
 from blastcheck.author import author_tests
@@ -22,6 +21,8 @@ from blastcheck.diff import DiffError, changed_blocks, make_workspace
 from blastcheck.intent import infer_intent
 from blastcheck.llm import DEFAULT_MODEL, LLM, AnthropicLLM, LLMError, ReplayLLM
 from blastcheck.plan import plan_module
+from blastcheck.policy import run_checkov
+from blastcheck.report import build_report, verdict
 from blastcheck.terraform import TerraformError
 from blastcheck.validate import render_test_file, validate
 
@@ -42,37 +43,43 @@ def run(args: argparse.Namespace) -> int:
     work = Path(args.work) if args.work else Path(tempfile.mkdtemp(prefix="blastcheck-"))
     _say(f"workspace: {work}")
 
-    _say("1/5 diff: applying the PR to a copy of the module")
+    _say("1/6 diff: applying the PR to a copy of the module")
     diff_text = Path(args.diff).read_text()
     pre_dir, post_dir = make_workspace(Path(args.module), Path(args.diff), work)
     blocks = changed_blocks(pre_dir, post_dir)
     _say(f"    {len(blocks)} changed block(s): " + ", ".join(b.address for b in blocks))
 
-    _say("2/5 plan: planning before and after (offline, dummy credentials)")
+    _say("2/6 plan: planning before and after (offline, dummy credentials)")
     pre, post = plan_module(pre_dir), plan_module(post_dir)
 
     llm = _llm(args)
-    _say("3/5 intent: asking the LLM what to test")
+    _say("3/6 intent: asking the LLM what to test")
     pr_text = Path(args.intent).read_text() if args.intent else ""
     intent = infer_intent(llm, pr_text, diff_text, pre, post)
 
-    _say("4/5 author: writing tests")
+    _say("4/6 author: writing tests")
     authored = author_tests(llm, intent, blocks, pre, post, diff_text)
     _say(f"    {len(authored.tests)} candidate test(s), {len(authored.rejected)} rejected before running")
 
-    _say("5/5 validate: running every test before and after the change")
+    _say("5/6 validate: running every test before and after the change")
     results = validate(authored.tests, pre_dir, post_dir, pre, post)
     for result in results:
-        _say(f"    {result.outcome:<10} {result.test.name}: {result.reason}")
+        _say(f"    {result.outcome:<10} {result.test.name}")
 
+    _say("6/6 report")
+    policy = run_checkov(pre_dir, post_dir)
     cid = change_id(diff_text)
-    test_file = Path(args.out) / "tests" / f"{cid}.tftest.hcl"
+    out = Path(args.out)
+    test_file = out / "tests" / f"{cid}.tftest.hcl"
     test_file.parent.mkdir(parents=True, exist_ok=True)
     test_file.write_text(render_test_file(results, cid))
-    _say(f"tests: {test_file}")
+    report_file = out / "blastcheck-report.md"
+    report_file.write_text(
+        build_report(cid, intent, authored.rejected, results, policy, f"tests/{cid}.tftest.hcl")
+    )
 
-    print(json.dumps({"intent": asdict(intent), "rejected": [asdict(r) for r in authored.rejected],
-                      "results": [asdict(r) for r in results]}, indent=2))
+    print(verdict(results))
+    print(f"tests:  {test_file}\nreport: {report_file}")
     regressions = [r for r in results if r.outcome == "regression"]
     return EXIT_REGRESSION if regressions else EXIT_OK
 

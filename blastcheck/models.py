@@ -176,3 +176,19 @@ class ValidationResult:
     post: RunResult
     outcome: Outcome
     reason: str
+
+
+@dataclass(frozen=True)
+class PolicyFinding:
+    check_id: str
+    check_name: str
+    resource: str
+
+
+@dataclass(frozen=True)
+class PolicyResult:
+    """Checkov findings that are new after the change (or why Checkov didn't run)."""
+
+    status: Literal["ran", "skipped", "error"]
+    new_findings: list[PolicyFinding]
+    note: str

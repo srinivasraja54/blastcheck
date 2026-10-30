@@ -10,3 +10,5 @@ __pycache__/
 *.tfplan
 CLAUDE.md
 .env
+# blastcheck output from the README demo
+out/
