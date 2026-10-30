@@ -21,9 +21,9 @@ class PolicyError(Exception):
 def find_checkov() -> str | None:
     """Checkov on PATH.
 
-    Install it in its own environment (pipx or brew), never in blastcheck's: Checkov
-    depends on bc-python-hcl2, which installs under the same `hcl2` import name and
-    replaces the python-hcl2 that blastcheck needs.
+    Install it in its own environment (`pipx install --python python3.12 checkov`),
+    never in blastcheck's: Checkov depends on bc-python-hcl2, which installs under the
+    same `hcl2` import name and replaces the python-hcl2 that blastcheck needs.
     """
     return shutil.which("checkov")
 
@@ -32,7 +32,7 @@ def run_checkov(pre_dir: Path, post_dir: Path) -> PolicyResult:
     checkov = find_checkov()
     if checkov is None:
         return PolicyResult(
-            "skipped", [], "Checkov is not on PATH (install it with `pipx install checkov` or `brew install checkov`)."
+            "skipped", [], "Checkov is not on PATH (install it with `pipx install --python python3.12 checkov`)."
         )
     try:
         before = set(failed_checks(checkov, pre_dir))

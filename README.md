@@ -51,6 +51,11 @@ downloads the AWS provider. The output is in
 [report](examples/vpc-sg-bucket/expected/blastcheck-report.md) and the
 [generated tests](examples/vpc-sg-bucket/expected/tests/2d20d867.tftest.hcl).
 
+With Checkov installed, the report also shows why a policy scanner isn't enough here.
+Checkov finds 8 issues in the module, all of them already there before the PR, and
+**0 new findings** from the PR. The SSH widening passes every policy check, and only
+blastcheck flags it.
+
 The report shows all four ways a test can end:
 
 - **regression**: the SSH guard passes before the change and fails after it;
@@ -220,10 +225,28 @@ anything blastcheck dropped from the LLM's answer, and Checkov's results.
 Checkov runs on both copies, and only findings that are **new after the change** are
 reported. If Checkov isn't on `PATH`, the report says so.
 
-Install Checkov in its own environment (`pipx install checkov` or `brew install checkov`),
-**not** in blastcheck's virtualenv. Checkov depends on `bc-python-hcl2`, which installs
-under the same `hcl2` import name and replaces the python-hcl2 that blastcheck needs.
-blastcheck stops with a clear error if that happens.
+Install Checkov in its own environment, on Python 3.12:
+
+```sh
+pipx install --python python3.12 checkov
+```
+
+On macOS, pipx's default home (`~/Library/Application Support/pipx`) contains a space,
+which breaks the installed script ("bad interpreter"). Use a home without one:
+
+```sh
+export PIPX_HOME="$HOME/.local/pipx"   # add this to ~/.zshrc too
+pipx install --python python3.12 checkov
+```
+
+Two traps to avoid:
+
+- **Not in blastcheck's virtualenv.** Checkov depends on `bc-python-hcl2`, which installs
+  under the same `hcl2` import name and replaces the python-hcl2 that blastcheck needs.
+  blastcheck stops with a clear error if that happens.
+- **Not via Homebrew (as of Checkov 3.4.0).** The Homebrew build runs on Python 3.15,
+  where Checkov's graph checks (`CKV2_*` and several S3 checks) fail to load without
+  any error. It then runs only the simple checks and still reports success.
 
 ## Running it
 
